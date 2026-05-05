@@ -1,61 +1,54 @@
-import numpy as np
+import torch
+import torch.nn as nn
+import torch.optim as optim
 from sklearn.model_selection import train_test_split
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import accuracy_score, classification_report
+import numpy as np
 
+# Step 1: Simulated dataset (to be replaced later)
+X = np.random.rand(200, 20)
+y = np.random.randint(0, 2, 200)
 
-def generate_dataset():
-    """
-    Placeholder dataset (to be replaced with paper dataset later)
-    """
-    np.random.seed(42)
-    X = np.random.rand(200, 20)   # 200 samples, 20 features
-    y = np.random.randint(0, 2, 200)  # binary labels
-    return X, y
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2)
 
+X_train = torch.tensor(X_train, dtype=torch.float32)
+y_train = torch.tensor(y_train, dtype=torch.long)
 
-def train_model(X_train, y_train):
-    """
-    Train baseline model
-    """
-    model = RandomForestClassifier(n_estimators=100, random_state=42)
-    model.fit(X_train, y_train)
-    return model
+X_test = torch.tensor(X_test, dtype=torch.float32)
+y_test = torch.tensor(y_test, dtype=torch.long)
 
+# Step 2: Neural Network (representation learning)
+class SimpleNet(nn.Module):
+    def __init__(self):
+        super(SimpleNet, self).__init__()
+        self.fc1 = nn.Linear(20, 64)
+        self.relu = nn.ReLU()
+        self.fc2 = nn.Linear(64, 2)
 
-def evaluate_model(model, X_test, y_test):
-    """
-    Evaluate model performance
-    """
-    y_pred = model.predict(X_test)
+    def forward(self, x):
+        x = self.fc1(x)
+        x = self.relu(x)
+        return self.fc2(x)
 
-    accuracy = accuracy_score(y_test, y_pred)
-    report = classification_report(y_test, y_pred)
+model = SimpleNet()
 
-    print("\n--- Evaluation Results ---")
-    print(f"Accuracy: {accuracy:.4f}")
-    print("\nClassification Report:\n", report)
+# Step 3: Training
+criterion = nn.CrossEntropyLoss()
+optimizer = optim.Adam(model.parameters(), lr=0.001)
 
+for epoch in range(10):
+    outputs = model(X_train)
+    loss = criterion(outputs, y_train)
 
-def main():
-    print("Starting baseline pipeline...")
+    optimizer.zero_grad()
+    loss.backward()
+    optimizer.step()
 
-    # Step 1: Load / generate dataset
-    X, y = generate_dataset()
+print("Training complete")
 
-    # Step 2: Split dataset
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.2, random_state=42
-    )
+# Step 4: Evaluation
+with torch.no_grad():
+    outputs = model(X_test)
+    _, predicted = torch.max(outputs, 1)
+    accuracy = (predicted == y_test).float().mean()
 
-    # Step 3: Train model
-    model = train_model(X_train, y_train)
-
-    # Step 4: Evaluate model
-    evaluate_model(model, X_test, y_test)
-
-    print("\nPipeline completed successfully.")
-
-
-if __name__ == "__main__":
-    main()
+print("Test Accuracy:", accuracy.item())
