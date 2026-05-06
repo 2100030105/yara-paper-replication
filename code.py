@@ -5,10 +5,11 @@ from sklearn.model_selection import train_test_split
 import numpy as np
 
 # -----------------------------
-# Step 1: Dataset
+# Step 1: Dataset (structured, not random noise)
 # -----------------------------
-X = np.random.randn(200, 20)   # better than binary for learning
-y = np.random.randint(0, 2, 200)
+np.random.seed(42)
+X = np.random.randn(300, 20)   # continuous features
+y = (X[:, 0] + X[:, 1] > 0).astype(int)  # simple rule-based labels
 
 X_train, X_test, y_train, y_test = train_test_split(
     X, y, test_size=0.2, random_state=42
@@ -21,7 +22,7 @@ X_test = torch.tensor(X_test, dtype=torch.float32)
 y_test = torch.tensor(y_test, dtype=torch.long)
 
 # -----------------------------
-# Step 2: Semi-symbolic Layer (FIXED)
+# Step 2: Semi-symbolic Layer
 # -----------------------------
 class SemiSymbolicLayer(nn.Module):
     def __init__(self, in_features, out_features, delta=1.0):
@@ -31,14 +32,11 @@ class SemiSymbolicLayer(nn.Module):
 
     def forward(self, x):
         weighted_sum = torch.matmul(x, self.weights)
-
-        # FIXED beta (stable training)
-        beta = self.delta * torch.sum(self.weights)
-
+        beta = self.delta * torch.sum(self.weights)  # stable version
         return torch.tanh(weighted_sum + beta)
 
 # -----------------------------
-# Step 3: Neural DNF
+# Step 3: Neural DNF Model
 # -----------------------------
 class NeuralDNF(nn.Module):
     def __init__(self, input_dim, hidden_dim, output_dim):
@@ -52,12 +50,37 @@ class NeuralDNF(nn.Module):
         return x
 
 # -----------------------------
-# Step 4: Model
+# Step 4: Exactly-One Constraint
 # -----------------------------
-model = NeuralDNF(input_dim=20, hidden_dim=16, output_dim=2)
+class ExactlyOneLayer(nn.Module):
+    def __init__(self, num_classes):
+        super().__init__()
+        self.weights = nn.Parameter(
+            -6 * torch.ones(num_classes, num_classes),
+            requires_grad=False
+        )
+
+    def forward(self, x):
+        return torch.matmul(x, self.weights)
 
 # -----------------------------
-# Step 5: Training
+# Step 5: Full Model (DNF-EO)
+# -----------------------------
+class NeuralDNF_EO(nn.Module):
+    def __init__(self, input_dim, hidden_dim, output_dim):
+        super().__init__()
+        self.dnf = NeuralDNF(input_dim, hidden_dim, output_dim)
+        self.constraint = ExactlyOneLayer(output_dim)
+
+    def forward(self, x):
+        dnf_out = self.dnf(x)
+        constrained_out = self.constraint(dnf_out)
+        return constrained_out, dnf_out
+
+model = NeuralDNF_EO(input_dim=20, hidden_dim=16, output_dim=2)
+
+# -----------------------------
+# Step 6: Training
 # -----------------------------
 criterion = nn.CrossEntropyLoss()
 optimizer = optim.Adam(model.parameters(), lr=0.01)
@@ -65,8 +88,9 @@ optimizer = optim.Adam(model.parameters(), lr=0.01)
 print("Starting training...\n")
 
 for epoch in range(20):
-    outputs = model(X_train)
-    loss = criterion(outputs, y_train)
+    _, dnf_out = model(X_train)   # train on DNF output
+
+    loss = criterion(dnf_out, y_train)
 
     optimizer.zero_grad()
     loss.backward()
@@ -77,11 +101,32 @@ for epoch in range(20):
 print("\nTraining complete\n")
 
 # -----------------------------
-# Step 6: Evaluation
+# Step 7: Evaluation
 # -----------------------------
 with torch.no_grad():
-    outputs = model(X_test)
-    _, predicted = torch.max(outputs, 1)
+    _, dnf_out = model(X_test)
+    _, predicted = torch.max(dnf_out, 1)
     accuracy = (predicted == y_test).float().mean()
 
 print("Test Accuracy:", accuracy.item())
+
+# -----------------------------
+# Step 8: Rule Extraction
+# -----------------------------
+def extract_rules(model, threshold=0.5):
+    print("\nExtracted Rules:\n")
+
+    weights = model.dnf.conj.weights.detach().numpy()
+
+    for i in range(weights.shape[1]):
+        rule = []
+        for j in range(weights.shape[0]):
+            if weights[j][i] > threshold:
+                rule.append(f"x{j}")
+            elif weights[j][i] < -threshold:
+                rule.append(f"NOT x{j}")
+
+        if rule:
+            print(f"Rule {i+1}: IF {' AND '.join(rule)} THEN class")
+
+extract_rules(model)
