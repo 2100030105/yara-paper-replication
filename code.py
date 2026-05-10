@@ -143,23 +143,24 @@ class SemiSymbolicLayer(nn.Module):
 
     def __init__(self, in_features: int, out_features: int, delta: float = 0.1):
         super().__init__()
-        # Small init — important so early tanh outputs are near 0
-        nn.init.uniform_(
-            self.weights := nn.Parameter(
-                torch.empty(in_features, out_features)
-            ),
-            -0.1, 0.1
+
+        self.weights = nn.Parameter(
+            torch.empty(in_features, out_features)
         )
-        self.delta = delta      # sign: +1 conj, −1 disj; magnitude annealed
+
+        nn.init.uniform_(self.weights, -0.1, 0.1)
+
+        self.delta = delta
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        abs_w = self.weights.abs()                    # (in, out)
-        beta  = self.delta * (
-            abs_w.max(dim=0).values                   # max_i |w_ij|
-            - abs_w.sum(dim=0)                        # Σ_i  |w_ij|
-        )                                             # shape: (out,)
-        return torch.tanh(x @ self.weights + beta)    # Eq. 1
+        abs_w = self.weights.abs()
 
+        beta = self.delta * (
+            abs_w.max(dim=0).values
+            - abs_w.sum(dim=0)
+        )
+
+        return torch.tanh(x @ self.weights + beta)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 3.  Neural DNF   (conjunctive layer → disjunctive layer)
